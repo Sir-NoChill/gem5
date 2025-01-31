@@ -53,11 +53,14 @@ import importlib
 import multiprocessing
 from pathlib import Path
 from typing import (
+    Dict,
+    List,
     Optional,
     Set,
 )
 
 from m5.core import override_re_outdir
+from m5.stats.gem5stats import SimStat
 
 # A global variable which __main__.py flips to `True` when multisim is run as
 # an executable module.
@@ -156,7 +159,7 @@ def get_num_processes(config_module_path: Path) -> Optional[int]:
     return num_processes_dict["num_processes"]
 
 
-def _run(module_path: Path, id: str) -> None:
+def _run(module_path: Path, id: str) -> str:
     """Run the simulator with the ID specified."""
 
     _load_module(module_path)
@@ -175,8 +178,11 @@ def _run(module_path: Path, id: str) -> None:
 
     sim_list[0].run()
 
+    # Return the path to the stats file
+    return m5.options.outdir + "/stats.txt"
 
-def run(module_path: Path, processes: Optional[int] = None) -> None:
+
+def run(module_path: Path, processes: Optional[int] = None) -> List[Dict]:
     """Run the simulators specified in the module in parallel.
 
     :param module_path: The path to the module containing the simulators to
@@ -210,7 +216,19 @@ def run(module_path: Path, processes: Optional[int] = None) -> None:
     # module path (the config script specifying all simulations using MultiSim)
     # but a different ID. The ID is used to select the correct simulator to
     # run.
-    pool.starmap(_run, zip([module_path for _ in range(len(ids))], tuple(ids)))
+    stats_files = pool.starmap(
+        _run, zip([module_path for _ in range(len(ids))], tuple(ids))
+    )
+
+    # Collect the simstats files and parse them to return to the driver
+    stats = []
+    for file in stats_files:
+        with open(file) as f:
+            stringified = f.read()
+        simstats = SimStat.from_string(stringified)
+        stats.append(simstats)
+
+    return stats
 
 
 def set_num_processes(num_processes: int) -> None:

@@ -24,6 +24,7 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+from collections import defaultdict
 from datetime import datetime
 from typing import (
     Dict,
@@ -48,12 +49,65 @@ class SimStat(Group):
         time_conversion: Optional[TimeConversion] = None,
         simulated_begin_time: Optional[Union[int, float]] = None,
         simulated_end_time: Optional[Union[int, float]] = None,
-        **kwargs: Dict[str, Union[Group, Statistic, List[Group]]]
+        **kwargs: Dict[str, Union[Group, Statistic, List[Group]]],
     ):
         super().__init__(
             creation_time=creation_time,
             time_conversion=time_conversion,
             simulated_begin_time=simulated_begin_time,
             simulated_end_time=simulated_end_time,
-            **kwargs
+            **kwargs,
         )
+
+    @classmethod
+    def from_string(cls, s: str) -> dict:
+        """
+        Parses the stats.txt file back into a dictionary of statistics.
+
+        Due to the bizarre json serialization of the SerializableStat
+        class, deserialization does not work by default. In order
+        to return the collected statistics from a multisim run,
+        we need to parse the stats.txt file.
+        """
+
+        # Construct the nested dictionary
+        def nested_dict():
+            return defaultdict(nested_dict)
+
+        def remove_spaces(l):
+            while "" in l:
+                l.remove("")
+            return l
+
+        # Initialize the stats
+        stats = nested_dict()
+
+        for line in s.split("\n"):
+            # remove newlines and delimiting lines
+            if line == "" or line.startswith("-"):
+                continue
+
+            kv_set = line.split(" ")
+            remove_spaces(kv_set)
+
+            try:
+                if "%" in kv_set[2]:
+                    # Parse distributions
+                    key, value = kv_set[0], [kv_set[1], kv_set[2], kv_set[3]]
+                else:
+                    # Parse single values
+                    key, value = kv_set[0], kv_set[1]
+            except IndexError:
+                print(f"Failed to parse line '{line}'")
+                continue
+
+            # Break into substats
+            sections = key.split(".")
+
+            acc = stats
+            for section in sections[:-1]:
+                acc = acc[section]
+
+            acc[sections[-1]] = value
+
+        return stats
